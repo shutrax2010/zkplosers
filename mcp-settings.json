@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "midnight": {
+      "command": "npx",
+      "args": ["-y", "@midnight-ntwrk/midnight-mcp-server@latest"],
+      "env": {
+        "NODE_OPTIONS": "--no-warnings"
+      }
+    }
+  }
+}

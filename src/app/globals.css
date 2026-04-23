@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --accent-purple: #7c3aed;
+  --accent-cyan: #06b6d4;
+  --accent-crimson: #e11d48;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  overflow-x: hidden;
+}
+
+.cyber-panel {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.neon-border-purple {
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5), inset 0 0 5px rgba(124, 58, 237, 0.3);
+  border-color: var(--accent-purple);
+}
+
+.neon-text-cyan {
+  text-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+  color: var(--accent-cyan);
+}
+
+.card-hidden {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+  border: 2px solid var(--accent-purple);
+  box-shadow: 0 0 15px rgba(124, 58, 237, 0.4);
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.zkp-scan-line {
+  height: 2px;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 10px var(--accent-cyan);
+  width: 100%;
+  position: absolute;
+  animation: scan 2s linear infinite;
+}
