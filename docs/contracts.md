@@ -206,7 +206,7 @@ zkp-demo1/
 
 ```
 ホスティング: Render Web Service (Node.js 20)
-  - URL: wss://losers-gambit-ws.onrender.com (予定)
+  - URL: wss://zkplosers.onrender.com (予定)
   - Free プランで運用（30秒ごとの PING で スリープ防止）
 
 役割:

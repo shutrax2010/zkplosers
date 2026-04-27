@@ -465,10 +465,10 @@ server.listen(PORT, () => {
 
 ```
 # .env.local (開発)
-VITE_WS_URL=ws://localhost:3001
+NEXT_PUBLIC_WS_URL=ws://localhost:3001
 
 # Render / 本番
-VITE_WS_URL=wss://your-app.onrender.com
+NEXT_PUBLIC_WS_URL=wss://zkplosers.onrender.com
 ```
 
 ### `server/package.json`
@@ -550,12 +550,288 @@ VITE_WS_URL=wss://your-app.onrender.com
 
 ---
 
+## 9. ゲームフロー状態機械
+
+### 9.1 クライアント側 Phase 一覧
+
+| Phase | 説明 | 次の Phase へのトリガー |
+|---|---|---|
+| `onboarding` | ウォレット接続 | SET_WALLET → `mode-select` |
+| `mode-select` | Solo/Multi 選択 | START_MULTI → `room-select` |
+| `room-select` | Room ID 入力 | JOIN_ROOM 送信 → `room-waiting` |
+| `room-waiting` | 対戦相手待ち | GAME_STARTED 受信 → `card-select` |
+| `card-select` | カード + モード選択 | COMMIT_MOVE → `waiting-opponent-commit` |
+| `waiting-opponent-commit` | 相手のコミット待ち | BOTH_COMMITTED 受信 → 分岐 |
+| `player-battle-fold` | 自分(公開)が Battle/Fold 選択 | PLAYER_DECISION → 分岐 |
+| `waiting-opponent-decision` | 相手の Battle/Fold 待ち | OPPONENT_DECISION 受信 → 分岐 |
+| `zkp-generating` | ZKP 生成アニメーション | ZKP_DONE → `revealing` |
+| `revealing` | カード開示 + 勝敗解決 | 両者開示完了 → `round-result` |
+| `round-result` | ラウンド結果表示 | NEXT_ROUND → `waiting-next-round` or `game-over` |
+| `waiting-next-round` | 相手の次ラウンド準備待ち | OPPONENT_READY_NEXT → `card-select` |
+| `game-over` | 総合結果 + 報酬 | RETURN_TO_LOBBY → `mode-select` |
+
+### 9.2 BOTH_COMMITTED 後の Phase 分岐
+
+```
+BOTH_COMMITTED { round } を受信
+  ↓ state.selectedMode (myMode) と state.opponentMode (oppMode) を参照
+
+  myMode=public,  oppMode=hidden   → player-battle-fold
+  myMode=hidden,  oppMode=public   → waiting-opponent-decision
+  myMode=public,  oppMode=public   → revealing
+  myMode=hidden,  oppMode=hidden   → zkp-generating
+```
+
+> **同期保証:** TCP 順序により OPPONENT_COMMITTED は必ず BOTH_COMMITTED より先に届く。
+> BOTH_COMMITTED 受信時点で state.opponentMode は確実に設定済み。
+
+### 9.3 サーバー側 Round 状態
+
+```typescript
+interface RoundState {
+  bothCommittedSent: boolean;   // BOTH_COMMITTED の二重送信防止
+  readyNext: [boolean, boolean]; // 両者 READY_NEXT_ROUND 済みか
+  round: number;                 // 0-indexed。両者 readyNext 完了で +1
+}
+```
+
+---
+
+## 10. シナリオ別シーケンス図
+
+### 10.1 ゲーム開始フロー
+
+```
+Player A                      Server                       Player B
+  │                             │                             │
+  │── JOIN_ROOM(roomId, A) ───►│                             │
+  │◄── ROOM_JOINED             │                             │
+  │    (player1, waiting=true) │                             │
+  │                             │◄─── JOIN_ROOM(roomId, B) ──│
+  │                             │──── ROOM_JOINED ───────────►│
+  │                             │     (player2, waiting=false)│
+  │◄── GAME_STARTED ───────────│                             │
+  │    (player1, opp=B)        │──── GAME_STARTED ──────────►│
+  │                             │     (player2, opp=A)        │
+  │ [card-select phase]         │              [card-select phase]
+```
+
+### 10.2 ラウンド開始（コミットフロー）
+
+両者が独立してカード選択・提出。先後の順序は問わない。
+
+```
+Player A (先にコミット)        Server              Player B (後にコミット)
+  │                             │                             │
+  │── COMMIT_MOVE(hidden) ────►│                             │
+  │[waiting-opponent-commit]    │── OPPONENT_COMMITTED ──────►│
+  │                             │   (mode=hidden)             │
+  │                             │◄─── COMMIT_MOVE(public) ───│
+  │◄── OPPONENT_COMMITTED ─────│              [waiting-opp-commit]
+  │    (mode=public)            │                             │
+  │◄── BOTH_COMMITTED(round=0) │─── BOTH_COMMITTED(round=0) ►│
+  │[→ waiting-opp-decision]    │         [→ player-battle-fold]
+```
+
+### 10.3 Decision Phase フロー
+
+**ケース: A=秘匿, B=公開 → B が Battle/Fold を選択**
+
+```
+Player A (hidden)              Server              Player B (public)
+[waiting-opp-decision]                             [player-battle-fold]
+  │                             │◄─── PLAYER_DECISION(battle)│
+  │◄── OPPONENT_DECISION ───── │                             │
+  │    (battle)                 │                             │
+  │[→ zkp-generating]           │                   [→ revealing]
+```
+
+**ケース: B が Fold を選択**
+
+```
+Player A (hidden)              Server              Player B (public)
+[waiting-opp-decision]                             [player-battle-fold]
+  │                             │◄─── PLAYER_DECISION(fold) ─│
+  │◄── OPPONENT_DECISION ───── │                             │
+  │    (fold)                   │               [→ round-result(folded)]
+  │[→ round-result(folded)]     │
+```
+
+### 10.4 Reveal フロー — 両公開 (Public vs Public)
+
+```
+Player A (public)              Server              Player B (public)
+[revealing]                                        [revealing]
+  │── REVEAL_PUBLIC(rock) ────►│                             │
+  │                             │── OPPONENT_REVEALED_PUBLIC ►│
+  │                             │   (cardType=rock)           │
+  │                             │◄─── REVEAL_PUBLIC(scissors)│
+  │◄── OPPONENT_REVEALED_PUBLIC│                             │
+  │    (cardType=scissors)      │                             │
+  │[→ resolveWithOpponentCard]  │     [→ resolveWithOpponentCard]
+  │[→ round-result]             │                 [→ round-result]
+```
+
+### 10.5 Reveal フロー — 秘匿(A) vs 公開(B): シーケンシャルリビール
+
+```
+Player A (hidden)              Server              Player B (public)
+[zkp-generating]                                   [revealing]
+  │                             │◄─── REVEAL_PUBLIC(rock) ───│
+  │◄── OPPONENT_REVEALED_PUBLIC│                             │
+  │    (cardType=rock)          │                             │
+  │ ⚠ ZKP 中のため pending     │                             │
+  │   に格納して待機            │                             │
+  │                             │                             │
+  ZKP 完了                      │                             │
+  │[→ revealing]                │                             │
+  │                             │                             │
+  pending 検出:                  │                             │
+  resolveWinner(scissors, rock) │                             │
+  claimedOutcome = 'PWins'      │                             │
+  │── REVEAL_HIDDEN ──────────►│                             │
+  │   (PWins, proof=scissors)   │── OPPONENT_REVEALED_HIDDEN ►│
+  │[→ round-result: A wins]     │   (claimedOutcome=PWins)    │
+                                                [→ round-result: A(=opponent) wins = B loses]
+```
+
+> **ZKP タイミング保証:**
+> - B の REVEAL_PUBLIC は A の ZKP 中に届く可能性がある
+> - `opponentPublicCardPending` に格納し、ZKP 完了 → `revealing` 移行時に処理
+> - A が先に revealing に入った場合は WS ハンドラ内でリアルタイム処理
+
+### 10.6 Reveal フロー — 両秘匿 (Hidden vs Hidden)
+
+```
+Player A (hidden)              Server              Player B (hidden)
+[zkp-generating → revealing]              [zkp-generating → revealing]
+  │── REVEAL_HIDDEN ──────────►│                             │
+  │   (claimedOutcome=*, proof=rock)                         │
+  │                             │◄─── REVEAL_HIDDEN ─────────│
+  │                             │     (claimedOutcome=*, proof=scissors)
+  │                             │── OPPONENT_REVEALED_HIDDEN ►│
+  │◄── OPPONENT_REVEALED_HIDDEN│     (proof=scissors)        │
+  │    (proof=scissors)         │                             │
+  │[resolveWithProof(rock,scissors)]  [resolveWithProof(scissors,rock)]
+  │[→ round-result: A wins]     │         [→ round-result: B loses]
+```
+
+> **Phase 2 (ダミー):** `proof` に実際のカード種を含める。受信側は `proof` で解決。  
+> **Phase 3:** `proof` は ZKP 証明に置き換え。サーバー経由でカード種は漏洩しない。  
+> **claimedOutcome は Phase 2 では 'Draw' のプレースホルダー**（proof を使うため不使用）。
+
+### 10.7 ラウンド終了 → 次ラウンド開始フロー
+
+```
+Player A                       Server                       Player B
+[round-result]                                            [round-result]
+  │── READY_NEXT_ROUND ───────►│                             │
+  │[→ waiting-next-round]      │── OPPONENT_READY_NEXT ──────►│
+  │                             │                             │
+  │                             │◄─── READY_NEXT_ROUND ───────│
+  │◄── OPPONENT_READY_NEXT ────│     [A がすでに waiting なら]│
+  │[→ card-select (round++)]   │──── OPPONENT_READY_NEXT ────►│
+  │                             │     (B が waiting の場合)    │
+                                                 [→ card-select (round++)]
+```
+
+> **サーバー処理:** 両者 READY_NEXT_ROUND 完了時に `room.round++`、`bothCommittedSent=false` リセット。
+
+### 10.8 ゲーム終了フロー
+
+```
+Player A                       Server                       Player B
+[round-result (3rd round)]                    [round-result (3rd round)]
+  │── READY_NEXT_ROUND ───────►│                             │
+  │                             │── OPPONENT_READY_NEXT ──────►│
+  │                             │◄─── READY_NEXT_ROUND ───────│
+  │◄── OPPONENT_READY_NEXT ────│                             │
+  │                             │                             │
+  │ currentRound >= totalRounds │         currentRound >= totalRounds
+  │[→ game-over]                │                   [→ game-over]
+  │                             │                             │
+  WS disconnect()               │                   WS disconnect()
+```
+
+> `OPPONENT_LEFT` が game-over フェーズ中に届いても無視する（正常切断のため）。
+
+---
+
+## 11. 同期保証と競合状態対策
+
+### 11.1 TCP 順序保証
+
+同一 WebSocket 接続上のメッセージは TCP によって順序が保証される。
+
+| 保証される順序 | 理由 |
+|---|---|
+| `OPPONENT_COMMITTED` → `BOTH_COMMITTED` | サーバーが同一接続へ順番に送信 |
+| `GAME_STARTED` → ゲーム開始 | JOIN_ROOM 完了後に送信 |
+| `OPPONENT_READY_NEXT` の配信順 | TCP 保証 |
+
+### 11.2 ZKP 競合状態 (opponentPublicCardPending)
+
+**問題:** 公開プレイヤーが Reveal を送信した時点で、秘匿プレイヤーはまだ ZKP 生成中の場合がある。
+
+**対策:**
+```
+state.opponentPublicCardPending: CardType | null
+
+OPPONENT_REVEALED_PUBLIC を受信:
+  phase = 'revealing' かつ myMode = 'hidden'
+    → WS ハンドラ内で REVEAL_HIDDEN 送信 → dispatch で解決
+  phase ≠ 'revealing' (ZKP 中など)
+    → opponentPublicCardPending に格納
+
+phase → 'revealing' 遷移時 (useMultiplayerSync outbound effect):
+  myMode = 'hidden' かつ oppMode = 'public' かつ pending ≠ null
+    → REVEAL_HIDDEN 送信 → dispatch OPPONENT_REVEALED_PUBLIC で解決
+  pending = null
+    → OPPONENT_REVEALED_PUBLIC の到着を待機（WS ハンドラが処理）
+```
+
+### 11.3 useMultiplayerSync の stateRef パターン
+
+WS メッセージハンドラはクロージャで古い state を参照する問題がある。
+
+```typescript
+const stateRef = useRef<GameState>(state);
+stateRef.current = state; // 毎レンダーで更新
+
+// WS ハンドラ内: stateRef.current で最新 state を参照
+```
+
+### 11.4 OPPONENT_LEFT の安全処理
+
+```
+phase = 'game-over' で OPPONENT_LEFT を受信
+  → 無視（正常切断）
+
+phase ≠ 'game-over' で OPPONENT_LEFT を受信
+  → mode-select に戻る（相手の異常切断）
+```
+
+### 11.5 ラウンド状態リセット
+
+各ラウンド開始時に以下をリセットする:
+
+| 項目 | リセット契機 |
+|---|---|
+| `selectedCard`, `selectedMode` | `NEXT_ROUND` または `OPPONENT_READY_NEXT` |
+| `opponentMode` | 同上 |
+| `opponentReady` | 同上 |
+| `opponentPublicCardPending` | `BOTH_COMMITTED` 受信時（フェーズ移行時） |
+| サーバー: `committed`, `mode` | `READY_NEXT_ROUND` 受信時 |
+| サーバー: `bothCommittedSent` | 両者 `READY_NEXT_ROUND` 完了時 |
+
+---
+
 ## 付録: WebSocket URL 設計
 
 | 環境 | URL |
 |---|---|
 | ローカル開発 | `ws://localhost:3001` |
-| Render (本番) | `wss://losers-gambit-ws.onrender.com` |
+| Render (本番) | `wss://zkplosers.onrender.com` |
 
 接続確立シーケンス:
 ```

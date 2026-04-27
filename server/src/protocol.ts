@@ -7,8 +7,8 @@ export type ClientMsg =
   | { type: 'LEAVE_ROOM' }
   | { type: 'COMMIT_MOVE';      commitment: string; mode: 'public' | 'hidden' }
   | { type: 'PLAYER_DECISION';  decision: 'battle' | 'fold' }
-  | { type: 'REVEAL_PUBLIC';    cardType: 'Rock' | 'Scissors' | 'Paper' | 'Loser' }
-  | { type: 'REVEAL_HIDDEN';    claimedOutcome: 'WIN' | 'LOSS' | 'DRAW'; proof?: string }
+  | { type: 'REVEAL_PUBLIC';    cardType: 'rock' | 'scissors' | 'paper' | 'loser' }
+  | { type: 'REVEAL_HIDDEN';    claimedOutcome: 'PWins' | 'OWins' | 'Draw'; proof?: string }
   | { type: 'ONCHAIN_TX';       action: string; txHash: string }
   | { type: 'READY_NEXT_ROUND' }
   | { type: 'PING' };
@@ -29,7 +29,7 @@ export type ServerMsg =
   | { type: 'BOTH_COMMITTED';     round: number }
   | { type: 'OPPONENT_DECISION';  decision: 'battle' | 'fold' }
   | { type: 'OPPONENT_REVEALED_PUBLIC';  cardType: string }
-  | { type: 'OPPONENT_REVEALED_HIDDEN';  claimedOutcome: string }
+  | { type: 'OPPONENT_REVEALED_HIDDEN';  claimedOutcome: string; proof?: string }
   | { type: 'OPPONENT_READY_NEXT' }
   | { type: 'ROUND_START';       round: number }
 
