@@ -1,5 +1,3 @@
-import { type Config } from '@midnight-ntwrk/midnight-js';
-
 /**
  * Midnight Network Configuration
  */

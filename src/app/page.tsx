@@ -140,22 +140,22 @@ export default function Home() {
   // --- Game Logic ---
 
   const generateDummyTxHash = () => `0x${Math.random().toString(16).substring(2, 18)}${Math.random().toString(16).substring(2, 18)}`;
+const calculateVP = useCallback((
+  pMove: Move, 
+  oMove: Move, 
+  pSecret: boolean, 
+  oSecret: boolean, 
+  pAction: 'battle' | 'fold',
+  oAction: 'battle' | 'fold' = 'battle'
+) => {
+  let pGain = 0;
+  let oGain = 0;
+  let result: RoundResult = null;
 
-  const calculateVP = useCallback((
-    pMove: Move, 
-    oMove: Move, 
-    pSecret: boolean, 
-    oSecret: boolean, 
-    pAction: 'BATTLE' | 'FOLD',
-    oAction: 'battle' | 'fold' = 'battle'
-  ) => {
-    let pGain = 0;
-    let oGain = 0;
-    let result: RoundResult = null;
-
-    if (pAction === 'FOLD' || oAction === 'fold') {
-      return { pGain: 0, oGain: 0, result: 'FOLDED' as RoundResult };
-    }
+  // 1. fold 判定
+  if (pAction === 'fold' || oAction === 'fold') {
+    return { pGain: 0, oGain: 0, result: 'FOLDED' as RoundResult };
+  }
 
     if (pMove === oMove) {
       result = 'DRAW';
@@ -212,8 +212,9 @@ export default function Home() {
   }, [round, resetRoundStates, gameMode]);
 
   const finalizeResolution = useCallback((action: 'BATTLE' | 'FOLD', oMove: Move) => {
+    const pAction = action.toLowerCase() as 'battle' | 'fold';
     const oAction = gameMode === 'MULTI' ? (opponentStateRef.current.decision || 'battle') : 'battle';
-    let { pGain, oGain, result } = calculateVP(selectedMove!, oMove, isSecret, opponentIsSecret, action, oAction);
+    let { pGain, oGain, result } = calculateVP(selectedMove!, oMove, isSecret, opponentIsSecret, pAction, oAction);
 
     if (gameMode === 'MULTI' && opponentIsSecret && opponentStateRef.current.claimedOutcome && result !== 'FOLDED') {
       const outcome = opponentStateRef.current.claimedOutcome;
@@ -267,7 +268,8 @@ export default function Home() {
   const processResolution = useCallback((action: 'BATTLE' | 'FOLD') => {
     if (!selectedMove) return;
     setBattlePhase('RESOLUTION');
-    localDecisionRef.current = action;
+    const pAction = action.toLowerCase() as 'battle' | 'fold';
+    localDecisionRef.current = pAction;
 
     if (gameMode === 'SINGLE') {
       finalizeResolution(action, opponent.hand[0]);
@@ -280,7 +282,7 @@ export default function Home() {
             const oMove = opponentStateRef.current.revealedMove || opponentStateRef.current.publicCardPending;
             if (oMove) {
               clearInterval(checkPending);
-              const res = calculateVP(selectedMove, oMove, true, false, 'BATTLE', 'battle');
+              const res = calculateVP(selectedMove, oMove, true, false, 'battle', 'battle');
               const outcome = res.result === 'WIN' ? 'PWins' : res.result === 'LOSS' ? 'OWins' : 'Draw';
               multiplayerWS.send({ type: 'REVEAL_HIDDEN', claimedOutcome: outcome, proof: selectedMove.toLowerCase() });
               finalizeResolution(action, oMove);

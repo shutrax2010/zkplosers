@@ -40,7 +40,7 @@ export function handleConnection(ws: WebSocket) {
           
           // Room ID Validation: 6 chars, alphanumeric
           if (!/^[A-Z0-9]{6}$/.test(msg.roomId)) {
-            send({ type: 'ROOM_ERROR', code: 'ROOM_ERROR', message: 'Invalid Room ID. Must be 6 alphanumeric characters.' });
+            send({ type: 'ROOM_ERROR', code: 'INVALID_ROOM_ID', message: 'Invalid Room ID. Must be 6 alphanumeric characters.' });
             return;
           }
 

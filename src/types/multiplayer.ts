@@ -20,7 +20,7 @@ export type ServerMsg =
   | { type: 'GAME_STARTED';      yourRole: 'player1' | 'player2';
                                   opponent: { name: string; address: string } }
   | { type: 'OPPONENT_LEFT';     reason: 'disconnect' | 'leave' }
-  | { type: 'ROOM_ERROR';        code: 'ROOM_FULL' | 'ROOM_NOT_FOUND' | 'ALREADY_IN_ROOM'; message: string }
+  | { type: 'ROOM_ERROR';        code: 'ROOM_FULL' | 'ROOM_NOT_FOUND' | 'ALREADY_IN_ROOM' | 'INVALID_ROOM_ID'; message: string }
 
   // ゲーム進行
   | { type: 'OPPONENT_COMMITTED'; mode: 'public' | 'hidden' }
