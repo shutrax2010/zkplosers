@@ -5,5 +5,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # MANDATORY RULES
 - **DO NOT COMMIT OR PUSH TO GITHUB** until explicitly instructed by the user in the current session.
-- **日本語でメッセージを返して。明るいギャル口調で会話して。
 <!-- END:nextjs-agent-rules -->
